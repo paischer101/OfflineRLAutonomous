@@ -15,6 +15,7 @@ from mlagents_envs.communicator_objects.demonstration_meta_pb2 import (
 from mlagents_envs.timers import timed, hierarchical_timer
 from google.protobuf.internal.decoder import _DecodeVarint32  # type: ignore
 import matplotlib.pyplot as plt
+from copy import copy
 
 INITIAL_POS = 33
 SUPPORTED_DEMONSTRATION_VERSIONS = frozenset([0, 1])
@@ -41,6 +42,7 @@ class DemoLoader(object):
         self.buffer['obs_1'] = self.split_sequences(np.array(demo_buffer['obs_1']), dones)
         self.buffer['obs_2'] = self.split_sequences(np.array(demo_buffer['obs_2']), dones)
         self.buffer['obs_3'] = self.split_sequences(np.array(demo_buffer['obs_3']), dones)
+        self.buffer['obs_3'] = self.normalize_distance(self.buffer['obs_3'])
         self.buffer['action'] = self.split_sequences(np.array(demo_buffer['continuous_action']), dones)
         self.buffer['prev_action'] = self.split_sequences(np.array(demo_buffer['prev_action']), dones)
         self.buffer['done'] = self.split_sequences(np.array(demo_buffer['done']), dones)
@@ -296,6 +298,18 @@ class DemoLoader(object):
                 obs.append(tmp)
                 tmp = []
         return obs
+
+    def normalize_distance(self, distances):
+        dists = copy(distances)
+        min = np.min(np.ravel(distances))
+        max = np.max(np.ravel(distances))
+        for row in range(len(distances)):
+            for col in range(len(distances[row])):
+                dists[row][col] = self.min_max_norm(distances[row][col], min, max)
+        return dists
+
+    def min_max_norm(self, x, min, max):
+        return (x - min) / (max - min)
 
     def __len__(self):
         return len(self.buffer)
