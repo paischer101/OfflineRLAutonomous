@@ -14,7 +14,6 @@ from mlagents_envs.communicator_objects.demonstration_meta_pb2 import (
 )
 from mlagents_envs.timers import timed, hierarchical_timer
 from google.protobuf.internal.decoder import _DecodeVarint32  # type: ignore
-from collections import defaultdict
 import matplotlib.pyplot as plt
 
 INITIAL_POS = 33
@@ -23,7 +22,7 @@ SUPPORTED_DEMONSTRATION_VERSIONS = frozenset([0, 1])
 
 class DemoLoader(object):
 
-    def __init__(self, path, sequence_length, pad_sequences=False):
+    def __init__(self, path, sequence_length, load_transitions=False, visualize_sequence=False):
         if not os.path.exists(path):
             print(f"Directory {path} does not exist")
             exit(1)
@@ -36,17 +35,22 @@ class DemoLoader(object):
             buffer.resequence_and_append(target_buffer=demo_buffer, training_length=sequence_length)
         del buffer
         self.buffer = dict()
-        self.buffer['done'] = np.array(demo_buffer['done'])
-        self.buffer['rewards'] = self.split_sequences(np.array(demo_buffer['rewards']), self.buffer['done'])
-        self.buffer['obs_0'] = self.split_sequences(np.array(demo_buffer['obs_0']), self.buffer['done'])
-        self.buffer['obs_1'] = self.split_sequences(np.array(demo_buffer['obs_1']), self.buffer['done'])
-        self.buffer['obs_2'] = self.split_sequences(np.array(demo_buffer['obs_2']), self.buffer['done'])
-        self.buffer['obs_3'] = self.split_sequences(np.array(demo_buffer['obs_3']), self.buffer['done'])
-        self.buffer['action'] = self.split_sequences(np.array(demo_buffer['continuous_action']), self.buffer['done'])
-        self.buffer['prev_action'] = self.split_sequences(np.array(demo_buffer['prev_action']), self.buffer['done'])
+        dones = np.array(demo_buffer['done'])
+        self.buffer['rewards'] = self.split_sequences(np.array(demo_buffer['rewards']), dones)
+        self.buffer['obs_0'] = self.split_sequences(np.array(demo_buffer['obs_0']), dones)
+        self.buffer['obs_1'] = self.split_sequences(np.array(demo_buffer['obs_1']), dones)
+        self.buffer['obs_2'] = self.split_sequences(np.array(demo_buffer['obs_2']), dones)
+        self.buffer['obs_3'] = self.split_sequences(np.array(demo_buffer['obs_3']), dones)
+        self.buffer['action'] = self.split_sequences(np.array(demo_buffer['continuous_action']), dones)
+        self.buffer['prev_action'] = self.split_sequences(np.array(demo_buffer['prev_action']), dones)
+        self.buffer['done'] = self.split_sequences(np.array(demo_buffer['done']), dones)
         del demo_buffer
         print("Demonstrations loaded!")
-        self.visualize_sequence(self.buffer['obs_0'][0])
+        if visualize_sequence:
+            self.visualize_sequence(self.buffer['obs_0'][0])
+        if load_transitions:
+            self.buffer = self.split_buffer_into_transitions()
+
 
     def get_demo_files(self, path: str) -> List[str]:
         """
@@ -259,13 +263,43 @@ class DemoLoader(object):
             plt.imshow(img, cmap='gray')
             plt.show()
 
+    def split_buffer_into_transitions(self):
+        buffer = []
+
+        for i in range(len(self.buffer['rewards'])):
+            self.buffer['obs_0'][i].append(self.buffer['obs_0'][i][-1])
+            self.buffer['obs_1'][i].append(self.buffer['obs_1'][i][-1])
+            self.buffer['obs_2'][i].append(self.buffer['obs_2'][i][-1])
+            self.buffer['obs_3'][i].append(self.buffer['obs_3'][i][-1])
+            o1, o2, o3, o4 = self.buffer['obs_0'][i][:-1], self.buffer['obs_1'][i][:-1], self.buffer['obs_2'][i][:-1], \
+                             self.buffer['obs_3'][i][:-1]
+            o1_next, o2_next, o3_next, o4_next = self.buffer['obs_0'][i][1:], self.buffer['obs_1'][i][1:], \
+                                                 self.buffer['obs_2'][i][1:], self.buffer['obs_3'][i][1:]
+            rewards = self.buffer['rewards'][i]
+            done = self.buffer['done'][i]
+            actions = self.buffer['action'][i]
+
+            for state, action, next_state, rew, d in zip(zip(o1, o2, o3, o4), actions,
+                                                         zip(o1_next, o2_next, o3_next, o4_next), rewards, done):
+                buffer.append((state, action, next_state, rew, d))
+
+        return np.array(buffer)
+
     def split_sequences(self, observations, done):
         obs = []
         tmp = []
         for o, d in zip(observations, done):
+            if len(o.shape) > 2:
+                o = o.transpose(2, 0, 1)
             tmp.append(o)
             if d:
                 obs.append(tmp)
                 tmp = []
         return obs
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def __getitem__(self, item):
+        return self.buffer[item]
 
