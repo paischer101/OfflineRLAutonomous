@@ -33,7 +33,7 @@ class Actor(nn.Module):
         self.sigma = nn.Linear(256, self.output_dim)
 
     def forward(self, X):
-        batch_size = X.size(0)
+        batch_size = X[0].size(0)
         encoded = []
         for x, enc in zip(X, self.encoders):
             if not isinstance(enc, nn.Linear):

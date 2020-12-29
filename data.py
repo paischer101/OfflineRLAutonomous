@@ -16,6 +16,8 @@ from mlagents_envs.timers import timed, hierarchical_timer
 from google.protobuf.internal.decoder import _DecodeVarint32  # type: ignore
 import matplotlib.pyplot as plt
 from copy import copy
+import torch
+from itertools import chain
 
 INITIAL_POS = 33
 SUPPORTED_DEMONSTRATION_VERSIONS = frozenset([0, 1])
@@ -301,8 +303,8 @@ class DemoLoader(object):
 
     def normalize_distance(self, distances):
         dists = copy(distances)
-        min = np.min(np.ravel(distances))
-        max = np.max(np.ravel(distances))
+        min = np.min(np.array(list(chain.from_iterable(distances))))
+        max = np.max(np.array(list(chain.from_iterable(distances))))
         for row in range(len(distances)):
             for col in range(len(distances[row])):
                 dists[row][col] = self.min_max_norm(distances[row][col], min, max)
@@ -316,4 +318,36 @@ class DemoLoader(object):
 
     def __getitem__(self, item):
         return self.buffer[item]
+
+class Dataloader(object):
+
+    def __init__(self, demoloader, batch_size, device, transitions=True):
+        self.transitions = transitions
+        self.buffer = demoloader.buffer
+        self.batch_size = batch_size
+        self.device = device
+
+    def shuffle(self):
+        if self.transitions:
+            # buffer stores single transitions
+            np.random.shuffle(self.buffer)
+        else:
+            # buffer stores whole sequences
+            shuffled = np.random.permutation(len(self.buffer))
+            self.buffer = self.buffer[shuffled]
+
+    def yield_batches(self, infinite=False, shuffle=True):
+        if infinite:
+            while True:
+                for i in range(0, len(self.buffer), self.batch_size):
+                    excerpt = self.buffer[i : i+self.batch_size]
+                    obs_1 = torch.Tensor([t[0][0] for t in excerpt]).to(self.device)
+                    obs_2 = torch.Tensor([t[0][1] for t in excerpt]).to(self.device)
+                    obs_3 = torch.Tensor([t[0][2] for t in excerpt]).to(self.device)
+                    obs_4 = torch.Tensor([t[0][3] for t in excerpt]).to(self.device)
+                    actions = torch.Tensor([t[1] for t in excerpt]).to(self.device)
+                    yield [obs_1, obs_2, obs_3, obs_4], actions
+
+                if shuffle:
+                    self.shuffle()
 
