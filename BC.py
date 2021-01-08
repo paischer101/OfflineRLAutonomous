@@ -47,7 +47,7 @@ def main():
             # continue prior run
             state_dict = torch.load(f'./results/BC_{run}/ckpt.pt')
             network.load_state_dict(state_dict['network'])
-            optim.load_state_dict(state_dict['optim'])
+            optim.load_state_dict(state_dict['optimizer'])
             step = state_dict['step']
 
         summary_writer = SummaryWriter(log_dir=f'./results/BC_{run}')
@@ -62,7 +62,7 @@ def main():
                 mu, sigma = network(observation)
                 mu_error = loss(mu, action)
                 entropy = Normal(loc=mu, scale=sigma).entropy().mean()
-                error = mu_error - (entropy * 1e-3)
+                error = mu_error - entropy * 1e-3
                 optim.zero_grad()
                 error.backward()
                 optim.step()
@@ -103,7 +103,7 @@ def main():
             for p in optim.param_groups:
                 p['lr'] = lr
 
-            if not step % 1000:
+            if not step % 100:
                 # Save model and stop training
                 checkpoint = {
                     'network': network.state_dict(),
@@ -111,7 +111,8 @@ def main():
                     'step': step
                 }
                 torch.save(checkpoint, f'./results/BC_{run}/ckpt.pt')
-                break
+
+        summary_writer.close()
 
 
 if __name__ == '__main__':

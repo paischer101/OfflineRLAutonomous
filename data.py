@@ -340,7 +340,7 @@ class Dataloader(object):
         if infinite:
             while True:
                 for i in range(0, len(self.buffer), self.batch_size):
-                    excerpt = self.buffer[i : i+self.batch_size]
+                    excerpt = self.buffer[i: i+self.batch_size]
                     obs_1 = torch.Tensor([t[0][0] for t in excerpt]).to(self.device)
                     obs_2 = torch.Tensor([t[0][1] for t in excerpt]).to(self.device)
                     obs_3 = torch.Tensor([t[0][2] for t in excerpt]).to(self.device)
