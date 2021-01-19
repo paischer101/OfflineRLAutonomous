@@ -25,7 +25,8 @@ SUPPORTED_DEMONSTRATION_VERSIONS = frozenset([0, 1])
 
 class DemoLoader(object):
 
-    def __init__(self, path, sequence_length, load_transitions=False, visualize_sequence=False):
+    def __init__(self, path, sequence_length, load_transitions=False, visualize_sequence=False,
+                 discard_incompletes=False):
         if not os.path.exists(path):
             print(f"Directory {path} does not exist")
             exit(1)
@@ -37,20 +38,22 @@ class DemoLoader(object):
             _, buffer = self.demo_to_buffer(f, sequence_length)
             buffer.resequence_and_append(target_buffer=demo_buffer, training_length=sequence_length)
         del buffer
+        self.discard_incompletes = discard_incompletes
         self.load_transitions = load_transitions
         self.buffer = dict()
         dones = np.array(demo_buffer['done'])
-        self.buffer['rewards'] = self.split_sequences(np.array(demo_buffer['rewards']), dones)
-        self.buffer['obs_0'] = self.split_sequences(np.array(demo_buffer['obs_0']), dones)
-        self.buffer['obs_1'] = self.split_sequences(np.array(demo_buffer['obs_1']), dones)
-        self.buffer['obs_2'] = self.split_sequences(np.array(demo_buffer['obs_2']), dones)
-        self.buffer['obs_3'] = self.split_sequences(np.array(demo_buffer['obs_3']), dones)
+        rewards = np.array(demo_buffer['rewards'])
+        self.buffer['rewards'] = self.split_sequences(np.array(demo_buffer['rewards']), dones, rewards)
+        self.buffer['obs_0'] = self.split_sequences(np.array(demo_buffer['obs_0']), dones, rewards)
+        self.buffer['obs_1'] = self.split_sequences(np.array(demo_buffer['obs_1']), dones, rewards)
+        self.buffer['obs_2'] = self.split_sequences(np.array(demo_buffer['obs_2']), dones, rewards)
+        self.buffer['obs_3'] = self.split_sequences(np.array(demo_buffer['obs_3']), dones, rewards)
         self.buffer['obs_3'] = self.normalize_distance(self.buffer['obs_3'])
-        self.buffer['action'] = self.split_sequences(np.array(demo_buffer['continuous_action']), dones)
-        self.buffer['prev_action'] = self.split_sequences(np.array(demo_buffer['prev_action']), dones)
-        self.buffer['done'] = self.split_sequences(np.array(demo_buffer['done']), dones)
+        self.buffer['action'] = self.split_sequences(np.array(demo_buffer['continuous_action']), dones, rewards)
+        self.buffer['prev_action'] = self.split_sequences(np.array(demo_buffer['prev_action']), dones, rewards)
+        self.buffer['done'] = self.split_sequences(np.array(demo_buffer['done']), dones, rewards)
         del demo_buffer
-        print("Demonstrations loaded!")
+        print(f"Loaded {len(self.buffer['rewards'])} Demonstration Sequences!")
         if visualize_sequence:
             self.visualize_sequence(self.buffer['obs_0'][0])
         if load_transitions:
@@ -290,14 +293,18 @@ class DemoLoader(object):
 
         return np.array(buffer)
 
-    def split_sequences(self, observations, done):
+    def split_sequences(self, observations, done, rewards):
         obs = []
         tmp = []
-        for o, d in zip(observations, done):
+        for o, d, rew in zip(observations, done, rewards):
             if len(o.shape) > 2:
                 o = o.transpose(2, 0, 1)
             tmp.append(o)
             if d:
+                if self.discard_incompletes:
+                    if rew < 0:
+                        tmp = []
+                        continue
                 obs.append(tmp)
                 tmp = []
         return obs

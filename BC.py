@@ -18,7 +18,7 @@ def create_parser():
 def main():
     options = create_parser()
     use_transitions = False if 'drqn' in options.modelfile else True
-    demoloader = DemoLoader('./Demonstrations', 1, load_transitions=use_transitions)
+    demoloader = DemoLoader('./Demonstrations', 1, load_transitions=use_transitions, discard_incompletes=True)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     dataloader = CloningDataloader(demoloader, batch_size=8, device=device, transitions=use_transitions)
 
