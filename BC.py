@@ -72,7 +72,7 @@ def main():
                 else:
                     seqs, seqlens = next(batch_generator)
                     observation, action = seqs
-                    mu, sigma = network(observation, seqlens)
+                    mu, sigma = network(observation, action, seqlens)
                 mu_error = loss(mu, action)
                 entropy = Normal(loc=mu, scale=sigma).entropy().mean()
                 error = mu_error - entropy * 1e-3

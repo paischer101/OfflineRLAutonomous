@@ -22,6 +22,7 @@ class Actor(nn.Module):
                 nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
+        self.encoders.append(nn.Linear(in_features=2, out_features=64))
         self.encoders = nn.ModuleList(self.encoders)
         self.fc_input_dim = self.feature_size()
         self.lstm_hidden = None
@@ -35,14 +36,15 @@ class Actor(nn.Module):
     def init_hidden(self, batch_size):
         self.lstm_hidden = (Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
                             Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)))
+        self.prev_action = (Variable(torch.zeros(batch_size, 2)))
 
 
-    def forward(self, X, seqlens):
+    def forward(self, X, actions, seqlens):
         batch_size = X[0].size(0)
         seqlen = X[0].size(1)
 
         self.init_hidden(batch_size)
-
+        X.append(actions)
         encoded = []
         for x, enc in zip(X, self.encoders):
             seq_encoding = []
@@ -59,14 +61,14 @@ class Actor(nn.Module):
         packed = pack_padded_sequence(x, torch.LongTensor(seqlens), batch_first=True, enforce_sorted=False)
         h_t, c_t = self.lstm_hidden
         hidden, _ = self.lstm(packed, (h_t, c_t))
-        unpacked, seqlens = pad_packed_sequence(packed, batch_first=True)
+        unpacked, seqlens = pad_packed_sequence(hidden, batch_first=True)
         var = nn.functional.softplus(self.sigma(unpacked)) + 1e-5
         mu = self.mu(unpacked)
         return mu, var
 
     def inference(self, observation):
         batch_size = observation[0].size(0)
-
+        observation.append(self.prev_action)
         encoded = []
         for x, enc in zip(observation, self.encoders):
             if not isinstance(enc, nn.Linear):
@@ -75,19 +77,20 @@ class Actor(nn.Module):
                 encoded.append(torch.mean(out.view(batch_size, n_filters, -1), dim=-1).view(batch_size, -1))
             else:
                 encoded.append(enc(x).view(batch_size, -1))
-
         encoded = torch.cat(encoded, dim=-1).view(batch_size, 1, -1)
         hidden_init = self.lstm_hidden
         next_pred, (h_t, c_t) = self.lstm(encoded, hidden_init)
         self.lstm_hidden = (h_t, c_t)
         var = nn.functional.softplus(self.sigma(next_pred)) + 1e-5
         mu = self.mu(next_pred)
+        self.prev_action = mu.detach().squeeze().unsqueeze(0)
         return mu, var
 
     def feature_size(self):
         dummies = []
         dummies += [torch.zeros(1, *self.image_dim)] * self.n_image_inputs
         dummies += [torch.zeros((1, 1))]
+        dummies += [torch.zeros((1, 2))]
         outs = []
         for d, en in zip(dummies, self.encoders):
             if not isinstance(en, nn.Linear):
@@ -95,7 +98,10 @@ class Actor(nn.Module):
                 n_filters = out.shape[1]
                 outs.append(torch.mean(out.view(1, n_filters, -1), dim=-1).view(1, -1).squeeze())
             else:
-                outs.append(en(d).squeeze())
+                if en.in_features == 1:
+                    outs.append(en(d).squeeze())
+                else:
+                    outs.append(en(d).squeeze())
         outs = torch.stack(outs).view(1, -1)
         return outs.size(1)
 
