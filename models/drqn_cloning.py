@@ -22,6 +22,7 @@ class Actor(nn.Module):
                 nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
+        self.encoders = nn.ModuleList(self.encoders)
         self.fc_input_dim = self.feature_size()
         self.lstm_hidden = None
         self.lstm_layers = 1
@@ -41,7 +42,6 @@ class Actor(nn.Module):
         seqlen = X[0].size(1)
 
         self.init_hidden(batch_size)
-        device = next(self.parameters()).device
 
         encoded = []
         for x, enc in zip(X, self.encoders):
