@@ -37,6 +37,7 @@ class DemoLoader(object):
             _, buffer = self.demo_to_buffer(f, sequence_length)
             buffer.resequence_and_append(target_buffer=demo_buffer, training_length=sequence_length)
         del buffer
+        self.load_transitions = load_transitions
         self.buffer = dict()
         dones = np.array(demo_buffer['done'])
         self.buffer['rewards'] = self.split_sequences(np.array(demo_buffer['rewards']), dones)
@@ -314,12 +315,19 @@ class DemoLoader(object):
         return (x - min) / (max - min)
 
     def __len__(self):
-        return len(self.buffer)
+        if self.load_transitions:
+            return len(self.buffer)
+        else:
+            return len(self.buffer['obs_0'])
 
     def __getitem__(self, item):
-        return self.buffer[item]
+        if self.load_transitions:
+            return self.buffer[item]
+        else:
+            return ([self.buffer['obs_0'][item], self.buffer['obs_1'][item], self.buffer['obs_2'][item],
+                     self.buffer['obs_3'][item]], self.buffer['action'][item])
 
-class Dataloader(object):
+class CloningDataloader(object):
 
     def __init__(self, demoloader, batch_size, device, transitions=True):
         self.transitions = transitions
@@ -333,21 +341,105 @@ class Dataloader(object):
             np.random.shuffle(self.buffer)
         else:
             # buffer stores whole sequences
-            shuffled = np.random.permutation(len(self.buffer))
-            self.buffer = self.buffer[shuffled]
+            shuffled = np.random.permutation(len(self.buffer['obs_0']))
+            for k in self.buffer.keys():
+                self.buffer[k] = [self.buffer[k][s] for s in shuffled]
+
+    def pad_batch(self, batch):
+        observations, actions = batch
+        maxlen = np.max([len(seq) for seq in actions])
+        pad_actions = np.expand_dims(np.zeros_like(np.array(actions[0][0])), 0)
+        pad_obs = np.expand_dims(np.zeros_like(np.array(observations[0][0][0])), 0)
+        padded_actions = [np.concatenate((a, np.repeat(pad_actions, (maxlen - len(a)), axis=0))) for a in actions]
+        padded_obs_1 = [np.concatenate((o, np.repeat(pad_obs, (maxlen - len(o)), axis=0))) for o in observations[0]]
+        padded_obs_2 = [np.concatenate((o, np.repeat(pad_obs, (maxlen - len(o)), axis=0))) for o in observations[1]]
+        padded_obs_3 = [np.concatenate((o, np.repeat(pad_obs, (maxlen - len(o)), axis=0))) for o in observations[2]]
+        padded_obs_4 = [np.concatenate((np.array(o), np.expand_dims(np.array([0] * (maxlen - len(o))), 1)))
+                        for o in observations[3]]
+        padded_actions = torch.FloatTensor(np.array(padded_actions)).to(self.device)
+        padded_obs_1 = torch.FloatTensor(np.array(padded_obs_1)).to(self.device)
+        padded_obs_2 = torch.FloatTensor(np.array(padded_obs_2)).to(self.device)
+        padded_obs_3 = torch.FloatTensor(np.array(padded_obs_3)).to(self.device)
+        padded_obs_4 = torch.FloatTensor(np.array(padded_obs_4)).to(self.device)
+        return [padded_obs_1, padded_obs_2, padded_obs_3, padded_obs_4], padded_actions
+
 
     def yield_batches(self, infinite=False, shuffle=True):
         if infinite:
             while True:
                 for i in range(0, len(self.buffer), self.batch_size):
-                    excerpt = self.buffer[i: i+self.batch_size]
-                    obs_1 = torch.Tensor([t[0][0] for t in excerpt]).to(self.device)
-                    obs_2 = torch.Tensor([t[0][1] for t in excerpt]).to(self.device)
-                    obs_3 = torch.Tensor([t[0][2] for t in excerpt]).to(self.device)
-                    obs_4 = torch.Tensor([t[0][3] for t in excerpt]).to(self.device)
-                    actions = torch.Tensor([t[1] for t in excerpt]).to(self.device)
-                    yield [obs_1, obs_2, obs_3, obs_4], actions
+                    if self.transitions:
+                        excerpt = self.buffer[i: i+self.batch_size]
+                        obs_1 = torch.Tensor([t[0][0] for t in excerpt]).to(self.device)
+                        obs_2 = torch.Tensor([t[0][1] for t in excerpt]).to(self.device)
+                        obs_3 = torch.Tensor([t[0][2] for t in excerpt]).to(self.device)
+                        obs_4 = torch.Tensor([t[0][3] for t in excerpt]).to(self.device)
+                        actions = torch.Tensor([t[1] for t in excerpt]).to(self.device)
+                        yield [obs_1, obs_2, obs_3, obs_4], actions
+                    else:
+                        batch_range = range(i, i + self.batch_size)
+                        actions = [[a for a in self.buffer['action'][j]] for j in batch_range]
+                        seqlens = [len(seq) for seq in actions]
+                        obs_1 = [[o for o in self.buffer['obs_0'][j]] for j in batch_range]
+                        obs_2 = [[o for o in self.buffer['obs_1'][j]] for j in batch_range]
+                        obs_3 = [[o for o in self.buffer['obs_2'][j]] for j in batch_range]
+                        obs_4 = [[o for o in self.buffer['obs_3'][j]] for j in batch_range]
+                        yield self.pad_batch(([obs_1, obs_2, obs_3, obs_4], actions)), seqlens
 
                 if shuffle:
                     self.shuffle()
 
+
+class ReplayBuffer(object):
+
+    def __init__(self, demo_buffer, discount, device):
+        self.buffer = demo_buffer
+        self.gamma = discount
+        self.device = device
+        self._append_returns_to_buffer()
+
+    def _append_returns_to_buffer(self):
+        new_buffer = []
+        return_seqs = self._calculate_returns()
+        return_seqs = np.array(return_seqs, dtype=np.object).ravel()
+        for s, a, ns, rew, d, ret in zip(self.buffer, return_seqs):
+            new_buffer.append((s, a, ns, rew, ret, d))
+        self.buffer = new_buffer
+
+    def _calculate_returns(self):
+        current_seq_rew = []
+        reward_seqs = []
+        for transition in self.buffer:
+            current_seq_rew.append(transition[-2])
+            if transition[-1]:
+                reward_seqs.append(current_seq_rew)
+                current_seq_rew = []
+
+        g_return = 0.
+        return_seqs = []
+        for i in range(len(reward_seqs)):
+            current_return_seq = []
+            for j in range(len(reward_seqs[i]) - 1, -1, -1):
+                g_return = reward_seqs[i, j] + self.gamma * g_return
+                current_return_seq.append(g_return)
+            return_seqs.append(current_return_seq)
+
+        return return_seqs
+
+    def sample(self, batch_size):
+        indices = np.random.choice(len(self.buffer), size=batch_size)
+        excerpt = [self.buffer[i] for i in indices]
+        obs_1 = torch.Tensor([t[0][0] for t in excerpt]).to(self.device)
+        obs_2 = torch.Tensor([t[0][1] for t in excerpt]).to(self.device)
+        obs_3 = torch.Tensor([t[0][2] for t in excerpt]).to(self.device)
+        obs_4 = torch.Tensor([t[0][3] for t in excerpt]).to(self.device)
+        actions = torch.Tensor([t[1] for t in excerpt]).to(self.device)
+        next_obs_1 = torch.Tensor([t[2][0] for t in excerpt]).to(self.device)
+        next_obs_2 = torch.Tensor([t[2][1] for t in excerpt]).to(self.device)
+        next_obs_3 = torch.Tensor([t[2][2] for t in excerpt]).to(self.device)
+        next_obs_4 = torch.Tensor([t[2][3] for t in excerpt]).to(self.device)
+        rewards = torch.Tensor([t[3] for t in excerpt]).to(self.device)
+        dones = torch.Tensor([t[-1] for t in excerpt]).to(self.device)
+        returns = torch.Tensor([t[-2] for t in excerpt]).to(self.device)
+        return [obs_1, obs_2, obs_3, obs_4], actions, [next_obs_1, next_obs_2, next_obs_3, next_obs_4], rewards, \
+              dones, returns

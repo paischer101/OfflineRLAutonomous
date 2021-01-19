@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from data import DemoLoader, Dataloader
+from data import DemoLoader, CloningDataloader
 import os
 import numpy as np
 import utils
@@ -17,14 +17,21 @@ def create_parser():
 
 def main():
     options = create_parser()
-    demoloader = DemoLoader('./Demonstrations', 1, load_transitions=True)
-
-    n_image_inputs = len(demoloader[0][0]) - 1
-    image_dim = np.array(demoloader[0][0][0]).shape
-    output_dim = len(demoloader[0][1])
+    use_transitions = False if 'drqn' in options.modelfile else True
+    demoloader = DemoLoader('./Demonstrations', 1, load_transitions=use_transitions)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dataloader = CloningDataloader(demoloader, batch_size=8, device=device, transitions=use_transitions)
+
+    if use_transitions:
+        n_image_inputs = len(demoloader[0][0]) - 1
+        image_dim = np.array(demoloader[0][0][0]).shape
+        output_dim = len(demoloader[0][1])
+    else:
+        n_image_inputs = len(demoloader[0][0]) - 1
+        image_dim = np.array(demoloader[0][0][0][0]).shape
+        output_dim = len(demoloader[0][1][0])
+
     env = utils.Environment('./Environment/deliveryservice')
-    dataloader = Dataloader(demoloader, batch_size=64, device=device)
 
     # perform supervised learning for behavioral cloning
     for run in range(options.n_runs):
@@ -41,16 +48,17 @@ def main():
         loss = nn.MSELoss()
         optim = torch.optim.Adam(params=network.parameters(), lr=lr)
 
-        if not os.path.exists(f'./results/BC_{run}'):
-            os.makedirs(f'./results/BC_{run}')
-        elif os.path.isfile(f'./results/BC_{run}/ckpt.pt'):
+        if not os.path.exists(f'./results/BC_{options.modelfile}_{run}'):
+            os.makedirs(f'./results/BC_{options.modelfile}_{run}')
+        elif os.path.isfile(f'./results/BC_{options.modelfile}_{run}/ckpt.pt'):
             # continue prior run
-            state_dict = torch.load(f'./results/BC_{run}/ckpt.pt')
+            state_dict = torch.load(f'./results/BC_{options.modelfile}_{run}/ckpt.pt')
             network.load_state_dict(state_dict['network'])
             optim.load_state_dict(state_dict['optimizer'])
             step = state_dict['step']
+            lr = optim.param_groups[0]['lr']
 
-        summary_writer = SummaryWriter(log_dir=f'./results/BC_{run}')
+        summary_writer = SummaryWriter(log_dir=f'./results/BC_{options.modelfile}_{run}')
         batch_generator = dataloader.yield_batches(infinite=True)
 
         while step < options.n_steps:
@@ -58,8 +66,13 @@ def main():
                 batch_mean_loss = []
                 batch_total_loss = []
                 batch_entropy = []
-                observation, action = next(batch_generator)
-                mu, sigma = network(observation)
+                if use_transitions:
+                    observation, action = next(batch_generator)
+                    mu, sigma = network(observation)
+                else:
+                    seqs, seqlens = next(batch_generator)
+                    observation, action = seqs
+                    mu, sigma = network(observation, seqlens)
                 mu_error = loss(mu, action)
                 entropy = Normal(loc=mu, scale=sigma).entropy().mean()
                 error = mu_error - entropy * 1e-3
@@ -81,10 +94,15 @@ def main():
                 cum_reward = 0
                 episode_length = 0
                 obs = env.reset()
+                if not use_transitions:
+                    network.init_hidden(1)
                 while not done:
                     obs = [torch.tensor(o.transpose(2, 0, 1)).unsqueeze(0).to(device) if len(o.shape) > 2
                            else torch.tensor(o).unsqueeze(0).to(device) for o in obs]
-                    mu, sigma = network(obs)
+                    if use_transitions:
+                        mu, sigma = network(obs)
+                    else:
+                        mu, sigma = network.inference(obs)
                     dist = Normal(loc=mu, scale=sigma)
                     action = dist.sample().squeeze().cpu().detach().numpy()
                     obs, rew, done, _ = env.step(action)
@@ -110,7 +128,7 @@ def main():
                     'optimizer': optim.state_dict(),
                     'step': step
                 }
-                torch.save(checkpoint, f'./results/BC_{run}/ckpt.pt')
+                torch.save(checkpoint, f'./results/BC_{options.modelfile}_{run}/ckpt.pt')
 
         summary_writer.close()
 
