@@ -15,7 +15,7 @@ def import_model(model_path):
 class Environment(object):
 
     def __init__(self, scenepath, record_video=False):
-        unity_env = UnityEnvironment(scenepath)
+        unity_env = UnityEnvironment(scenepath, no_graphics=True)
         self.env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=True)
         if record_video:
             self.env = gym.wrappers.Monitor(self.env, "./results/videos", video_callable=lambda episode_id: True,

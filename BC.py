@@ -75,7 +75,7 @@ def main():
                     mu, sigma = network(observation, action, seqlens)
                 mu_error = loss(mu, action)
                 entropy = Normal(loc=mu, scale=sigma).entropy().mean()
-                error = mu_error - entropy * 1e-3
+                error = mu_error - entropy * 1e-2
                 optim.zero_grad()
                 error.backward()
                 optim.step()
@@ -96,7 +96,7 @@ def main():
                 obs = env.reset()
                 if not use_transitions:
                     network.init_hidden(1)
-                while not done:
+                while not done and episode_length < 250:
                     obs = [torch.tensor(o.transpose(2, 0, 1)).unsqueeze(0).to(device) if len(o.shape) > 2
                            else torch.tensor(o).unsqueeze(0).to(device) for o in obs]
                     if use_transitions:
