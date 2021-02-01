@@ -403,35 +403,6 @@ class ReplayBuffer(object):
         self.buffer = demo_buffer
         self.gamma = discount
         self.device = device
-        self._append_returns_to_buffer()
-
-    def _append_returns_to_buffer(self):
-        new_buffer = []
-        return_seqs = self._calculate_returns()
-        return_seqs = np.array(return_seqs, dtype=np.object).ravel()
-        for s, a, ns, rew, d, ret in zip(self.buffer, return_seqs):
-            new_buffer.append((s, a, ns, rew, ret, d))
-        self.buffer = new_buffer
-
-    def _calculate_returns(self):
-        current_seq_rew = []
-        reward_seqs = []
-        for transition in self.buffer:
-            current_seq_rew.append(transition[-2])
-            if transition[-1]:
-                reward_seqs.append(current_seq_rew)
-                current_seq_rew = []
-
-        g_return = 0.
-        return_seqs = []
-        for i in range(len(reward_seqs)):
-            current_return_seq = []
-            for j in range(len(reward_seqs[i]) - 1, -1, -1):
-                g_return = reward_seqs[i, j] + self.gamma * g_return
-                current_return_seq.append(g_return)
-            return_seqs.append(current_return_seq)
-
-        return return_seqs
 
     def sample(self, batch_size):
         indices = np.random.choice(len(self.buffer), size=batch_size)
@@ -447,6 +418,5 @@ class ReplayBuffer(object):
         next_obs_4 = torch.Tensor([t[2][3] for t in excerpt]).to(self.device)
         rewards = torch.Tensor([t[3] for t in excerpt]).to(self.device)
         dones = torch.Tensor([t[-1] for t in excerpt]).to(self.device)
-        returns = torch.Tensor([t[-2] for t in excerpt]).to(self.device)
-        return [obs_1, obs_2, obs_3, obs_4], actions, [next_obs_1, next_obs_2, next_obs_3, next_obs_4], rewards, \
-              dones, returns
+        #returns = torch.Tensor([t[-2] for t in excerpt]).to(self.device)
+        return [obs_1, obs_2, obs_3, obs_4], actions, [next_obs_1, next_obs_2, next_obs_3, next_obs_4], rewards, dones
