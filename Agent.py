@@ -6,7 +6,7 @@ import numpy as np
 
 class Agent:
 
-    def __init__(self, network, gamma, demo_buffer, actor_lr, critic_lr, n_steps):
+    def __init__(self, network, gamma, demo_buffer, actor_lr, critic_lr, n_steps, target_entropy):
         self.network = network
         self.gamma = gamma
         self.alpha = 0.1
@@ -20,6 +20,9 @@ class Agent:
         self.initial_lr_critic = critic_lr
         self.lr_actor = actor_lr
         self.lr_critic = critic_lr
+        self.log_alpha = torch.zeros(1, requires_grad=True).to(self.device)
+        self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=actor_lr)
+        self.target_entropy = target_entropy
         self.actor_lr_decay = (self.initial_lr_actor - 1e-7) / n_steps
         self.critic_lr_decay = (self.initial_lr_critic - 1e-7) / n_steps
 
@@ -28,15 +31,25 @@ class Agent:
         q1_val_loss = []
         q2_val_loss = []
         entropies = []
+        alpha_losses = []
+        alphas = []
         # optionally add entropy scaling loss for SAC and alpha lagrangian for CQL
         for e in range(n_epochs):
 
             states, actions, next_states, rewards, dones = self.buffer.sample(batch_size)
 
-            # update for soft actor critic
             new_acts, log_probs, entropy = self.network.act(states)
+
+            # compute alpha loss
+            alpha_loss = -(self.log_alpha * (log_probs.detach() + self.target_entropy)).mean()
+            self.alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optimizer.step()
+            alpha = self.log_alpha.exp()
+
+            # update for soft actor critic
             q_new_acts = self.network.evaluate(states, new_acts)
-            policy_loss = (log_probs - q_new_acts).mean()
+            policy_loss = (alpha * log_probs - q_new_acts).mean()
 
             # perform critic update
             q1_vals = self.network.critic1(states + [actions])
@@ -100,5 +113,7 @@ class Agent:
             q1_val_loss.append(q1_loss.detach().item())
             q2_val_loss.append(q2_loss.detach().item())
             entropies.append(entropy.detach().mean().item())
+            alpha_losses.append(alpha_loss.detach().item())
+            alphas.append(alpha.detach().item())
 
-        return policy_losses, q1_val_loss, q2_val_loss, entropies
+        return policy_losses, q1_val_loss, q2_val_loss, entropies, alpha_losses, alphas

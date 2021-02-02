@@ -39,7 +39,8 @@ def main():
         selected_model = utils.import_model(options.modelfile)
         network = selected_model.get_architecture(image_dim, n_image_inputs, action_dim)
         network = network.to(device)
-        agent = Agent(network, 0.9, demoloader, 3e-4, 1e-3, options.n_steps)
+        target_entropy = -np.prod(env.env.action_space.shape).item()
+        agent = Agent(network, 0.9, demoloader, 3e-4, 1e-3, options.n_steps, target_entropy)
 
         if not os.path.exists(f'./results/CQ_SAC_{options.modelfile}_{run}'):
             os.makedirs(f'./results/CQ_SAC_{options.modelfile}_{run}')
@@ -56,13 +57,16 @@ def main():
 
         while step < options.n_steps:
 
-            policy_losses, q1_val_loss, q2_val_loss, entropies = agent.update(batch_size=16, n_epochs=n_epochs)
+            policy_losses, q1_val_loss, q2_val_loss, entropies, a_loss, alphas = \
+                agent.update(batch_size=16, n_epochs=n_epochs)
 
             step += 1
             summary_writer.add_scalar('Policy_Loss', np.mean(policy_losses), step)
             summary_writer.add_scalar('Q1_Loss', np.mean(q1_val_loss), step)
             summary_writer.add_scalar('Q2_Loss', np.mean(q2_val_loss), step)
             summary_writer.add_scalar('Policy_Entropy', np.mean(entropies), step)
+            summary_writer.add_scalar("Entropy_Tuning_Loss", np.mean(entropies), step)
+            summary_writer.add_scalar("Entropy_Tuning", np.mean(alphas), step)
 
             # evaluate agent in environment
             with torch.no_grad():
