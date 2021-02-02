@@ -10,6 +10,7 @@ def create_parser():
     parser.add_argument('--run', metavar='RUN', type=int, help='Which run to test')
     parser.add_argument('--test-runs', metavar='N-RUNS', type=int, help='How many runs to evaluate on environment')
     parser.add_argument('--env', metavar='ENV', type=str, help='Path to environment on which to evaluate')
+    parser.add_argument('--method', metavar='METHOD', type=str, help='method to evaluate')
     return parser.parse_args()
 
 def main():
@@ -20,7 +21,7 @@ def main():
     env = utils.Environment(options.env, record_video=True)
     selected_model = utils.import_model(options.modelfile)
     network = selected_model.get_architecture((4, 84, 84), 3, 2)
-    state_dict = torch.load(f'./results/BC_{options.modelfile}_{options.run}/ckpt.pt')
+    state_dict = torch.load(f'./results/{options.method}_{options.modelfile}_{options.run}/ckpt.pt')
     network.load_state_dict(state_dict['network'])
     network = network.to(device)
 
@@ -40,7 +41,10 @@ def main():
                 obs = [torch.tensor(o.transpose(2, 0, 1)).unsqueeze(0).to(device) if len(o.shape) > 2
                        else torch.tensor(o).unsqueeze(0).to(device) for o in obs]
                 if use_transitions:
-                    mu, sigma = network(obs)
+                    if 'CQ' in options.method:
+                        action, _ = network.act(obs)
+                    else:
+                        mu, sigma = network(obs)
                 else:
                     mu, sigma = network.inference(obs)
                 dist = Normal(loc=mu, scale=sigma)

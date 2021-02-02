@@ -22,6 +22,7 @@ class Critic(nn.Module):
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
         self.encoders.append(nn.Linear(in_features=action_dim, out_features=64))
+        self.encoders = nn.ModuleList(self.encoders)
         self.fc_input_dim = self.feature_size()
         self.decoder = nn.Sequential(
             nn.Linear(self.fc_input_dim, 128),
@@ -78,6 +79,7 @@ class Actor(nn.Module):
                 nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
+        self.encoders = nn.ModuleList(self.encoders)
         self.fc_input_dim = self.feature_size()
         self.decoder = nn.Sequential(
             nn.Linear(self.fc_input_dim, 128),
