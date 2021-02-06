@@ -25,7 +25,6 @@ def main():
     network.load_state_dict(state_dict['network'])
     network = network.to(device)
 
-    # perform supervised learning for behavioral cloning
     cum_rewards = []
     for _ in range(options.test_runs):
 

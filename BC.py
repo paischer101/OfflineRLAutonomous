@@ -95,7 +95,7 @@ def main():
                 episode_length = 0
                 obs = env.reset()
                 if not use_transitions:
-                    network.init_hidden(1)
+                    network.init_hidden(1, device)
                 while not done and episode_length < 250:
                     obs = [torch.tensor(o.transpose(2, 0, 1)).unsqueeze(0).to(device) if len(o.shape) > 2
                            else torch.tensor(o).unsqueeze(0).to(device) for o in obs]

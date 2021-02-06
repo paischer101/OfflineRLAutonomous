@@ -1,4 +1,4 @@
-name: offlinerl
+name: rlautonomous
 channels:
   - pytorch
   - conda-forge

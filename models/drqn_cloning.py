@@ -33,10 +33,10 @@ class Actor(nn.Module):
         self.sigma = nn.Linear(self.lstm_hidden_dim, self.output_dim)
 
 
-    def init_hidden(self, batch_size):
-        self.lstm_hidden = (Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-                            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)))
-        self.prev_action = (Variable(torch.zeros(batch_size, 2)))
+    def init_hidden(self, batch_size, device):
+        self.lstm_hidden = (Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)).to(device),
+                            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)).to(device))
+        self.prev_action = (Variable(torch.zeros(batch_size, 2))).to(device)
 
 
     def forward(self, X, actions, seqlens):

@@ -1,3 +1,7 @@
+"""
+Demonstration data loading was taken from the unity mlagents package (https://github.com/Unity-Technologies/ml-agents)
+"""
+
 import os
 from typing import List, Tuple
 import numpy as np
@@ -5,7 +9,7 @@ from mlagents.trainers.buffer import AgentBuffer
 from mlagents_envs.communicator_objects.agent_info_action_pair_pb2 import (
     AgentInfoActionPairProto,
 )
-from mlagents.trainers.trajectory import ObsUtil
+
 from mlagents_envs.rpc_utils import behavior_spec_from_proto, steps_from_proto
 from mlagents_envs.base_env import BehaviorSpec
 from mlagents_envs.communicator_objects.brain_parameters_pb2 import BrainParametersProto
@@ -21,6 +25,42 @@ from itertools import chain
 
 INITIAL_POS = 33
 SUPPORTED_DEMONSTRATION_VERSIONS = frozenset([0, 1])
+
+
+class ObsUtil:
+    @staticmethod
+    def get_name_at(index: int) -> str:
+        """
+        returns the name of the observation given the index of the observation
+        """
+        return f"obs_{index}"
+
+    @staticmethod
+    def get_name_at_next(index: int) -> str:
+        """
+        returns the name of the next observation given the index of the observation
+        """
+        return f"next_obs_{index}"
+
+    @staticmethod
+    def from_buffer(batch: AgentBuffer, num_obs: int) -> List[np.array]:
+        """
+        Creates the list of observations from an AgentBuffer
+        """
+        result: List[np.array] = []
+        for i in range(num_obs):
+            result.append(batch[ObsUtil.get_name_at(i)])
+        return result
+
+    @staticmethod
+    def from_buffer_next(batch: AgentBuffer, num_obs: int) -> List[np.array]:
+        """
+        Creates the list of next observations from an AgentBuffer
+        """
+        result = []
+        for i in range(num_obs):
+            result.append(batch[ObsUtil.get_name_at_next(i)])
+        return result
 
 
 class DemoLoader(object):
