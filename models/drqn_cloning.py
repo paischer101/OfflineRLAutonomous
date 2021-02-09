@@ -18,8 +18,6 @@ class Actor(nn.Module):
                 nn.ReLU(),
                 nn.Conv2d(16, 32, kernel_size=4, stride=2),
                 nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=3, stride=1),
-                nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
         self.encoders.append(nn.Linear(in_features=2, out_features=64))

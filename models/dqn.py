@@ -13,12 +13,10 @@ class Critic(nn.Module):
         self.encoders = []
         for i in range(n_image_inputs):
             self.encoders.append(nn.Sequential(
-                nn.Conv2d(self.image_dim[0], 32, kernel_size=8, stride=4),
+                nn.Conv2d(self.image_dim[0], 16, kernel_size=8, stride=4),
                 nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                nn.Conv2d(16, 32, kernel_size=4, stride=2),
                 nn.ReLU(),
-                nn.Conv2d(64, 64, kernel_size=3, stride=1),
-                nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
         self.encoders.append(nn.Linear(in_features=action_dim, out_features=64))
@@ -71,12 +69,10 @@ class Actor(nn.Module):
         self.encoders = []
         for i in range(n_image_inputs):
             self.encoders.append(nn.Sequential(
-                nn.Conv2d(self.image_dim[0], 32, kernel_size=8, stride=4),
+                nn.Conv2d(self.image_dim[0], 16, kernel_size=8, stride=4),
                 nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                nn.Conv2d(16, 32, kernel_size=4, stride=2),
                 nn.ReLU(),
-                nn.Conv2d(64, 64, kernel_size=3, stride=1),
-                nn.ReLU()
             ))
         self.encoders.append(nn.Linear(in_features=1, out_features=64))
         self.encoders = nn.ModuleList(self.encoders)
