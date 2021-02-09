@@ -21,15 +21,15 @@ class Actor(nn.Module):
         self.encoders = nn.ModuleList(self.encoders)
         self.fc_input_dim = self.feature_size()
         self.decoder = nn.Sequential(
-            nn.Linear(self.fc_input_dim, 128),
-            nn.LayerNorm(128, elementwise_affine=False),
-            nn.ReLU(),
-            nn.Linear(128, 256),
+            nn.Linear(self.fc_input_dim, 256),
             nn.LayerNorm(256, elementwise_affine=False),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128, elementwise_affine=False),
             nn.ReLU()
         )
-        self.mu = nn.Linear(256, self.output_dim)
-        self.sigma = nn.Linear(256, self.output_dim)
+        self.mu = nn.Linear(128, self.output_dim)
+        self.sigma = nn.Linear(128, self.output_dim)
 
     def forward(self, X):
         batch_size = X[0].size(0)
